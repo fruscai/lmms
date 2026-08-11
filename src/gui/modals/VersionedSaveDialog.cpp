@@ -189,8 +189,13 @@ SaveOptionsWidget::SaveOptionsWidget(Song::SaveOptions &saveOptions) {
 	m_saveAsProjectBundleCheckbox->setText(tr("Save As Project Bundle (with resources)"));
 	m_saveAsProjectBundleCheckbox->setModel(&saveOptions.saveAsProjectBundle);
 
+	m_saveWithEmbeddedSamplesCheckbox = new LedCheckBox(nullptr);
+	m_saveWithEmbeddedSamplesCheckbox->setText(tr("Save with embedded samples (one file, no resources)"));
+	m_saveWithEmbeddedSamplesCheckbox->setModel(&saveOptions.saveWithEmbeddedSamples);
+
 	layout->addWidget(m_discardMIDIConnectionsCheckbox);
 	layout->addWidget(m_saveAsProjectBundleCheckbox);
+	layout->addWidget(m_saveWithEmbeddedSamplesCheckbox);
 
 	setLayout(layout);
 }

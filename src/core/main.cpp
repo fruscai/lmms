@@ -416,7 +416,7 @@ int main( int argc, char * * argv )
 			if (argc > i+1) // Project bundle file name given
 			{
 				printf("Making bundle\n");
-				dataFile.writeFile(QString::fromLocal8Bit(argv[i+1]), true);
+				dataFile.writeFile(QString::fromLocal8Bit(argv[i+1]), DataFile::SaveMode::Bundle);
 				return EXIT_SUCCESS;
 			}
 			else

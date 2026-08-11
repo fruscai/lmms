@@ -33,6 +33,7 @@
 
 #include "AudioEngine.h"
 #include "Controller.h"
+#include "DataFile.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
 #include "MeterModel.h"
@@ -88,10 +89,16 @@ public:
 		 * Should we save the project as a project bundle? (with resources)
 		 */
 		BoolModel saveAsProjectBundle{false};
+		/**
+		 * Should we write the sample audio into the project file itself,
+		 * so it plays on a machine that does not have the audio files?
+		 */
+		BoolModel saveWithEmbeddedSamples{false};
 
 		void setDefaultOptions() {
 			discardMIDIConnections.setValue(false);
 			saveAsProjectBundle.setValue(false);
+			saveWithEmbeddedSamples.setValue(false);
 		}
 	};
 
@@ -250,7 +257,7 @@ public:
 	void loadProject( const QString & filename );
 	bool guiSaveProject();
 	bool guiSaveProjectAs(const QString & filename);
-	bool saveProjectFile(const QString & filename, bool withResources = false);
+	bool saveProjectFile(const QString & filename, DataFile::SaveMode mode = DataFile::SaveMode::Plain);
 
 	const QString & projectFileName() const
 	{

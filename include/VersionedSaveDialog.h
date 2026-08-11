@@ -44,6 +44,7 @@ public:
 private:
 	LedCheckBox *m_discardMIDIConnectionsCheckbox;
 	LedCheckBox *m_saveAsProjectBundleCheckbox;
+	LedCheckBox *m_saveWithEmbeddedSamplesCheckbox;
 };
 
 class VersionedSaveDialog : public FileDialog

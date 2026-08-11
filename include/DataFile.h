@@ -59,6 +59,14 @@ public:
 		MidiClip
 	} ;
 
+	//! How sample references are handled when the project is written out.
+	enum class SaveMode
+	{
+		Plain,	  //!< Leave every path as it is.
+		Bundle,	  //!< Copy the files into a resources folder and rewrite the paths to "local:".
+		Embedded, //!< Write the audio itself into the project as base64 and drop the paths.
+	} ;
+
 	DataFile( const QString& fileName );
 	DataFile( const QByteArray& data );
 	DataFile( Type type );
@@ -74,8 +82,9 @@ public:
 	QString nameWithExtension( const QString& fn ) const;
 
 	void write( QTextStream& strm );
-	bool writeFile(const QString& fn, bool withResources = false);
+	bool writeFile(const QString& fn, SaveMode mode = SaveMode::Plain);
 	bool copyResources(const QString& resourcesDir); //!< Copies resources to the resourcesDir and changes the DataFile to use local paths to them
+	bool embedResources(); //!< Reads each referenced sample and stores its audio in the DataFile itself, so the project needs no external files
 	bool hasLocalPlugins(QDomElement parent = QDomElement(), bool firstCall = true) const;
 
 	QDomElement& content()

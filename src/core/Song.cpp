@@ -1212,7 +1212,7 @@ void Song::loadProject( const QString & fileName )
 
 
 // only save current song as filename and do nothing else
-bool Song::saveProjectFile(const QString & filename, bool withResources)
+bool Song::saveProjectFile(const QString & filename, DataFile::SaveMode mode)
 {
 	using gui::getGUI;
 
@@ -1243,7 +1243,7 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 
 	m_savingProject = false;
 
-	return dataFile.writeFile(filename, withResources);
+	return dataFile.writeFile(filename, mode);
 }
 
 
@@ -1263,9 +1263,16 @@ bool Song::guiSaveProjectAs(const QString & filename)
 	DataFile dataFile(DataFile::Type::SongProject);
 	QString fileNameWithExtension = dataFile.nameWithExtension(filename);
 
-	bool withResources = m_saveOptions.saveAsProjectBundle.value();
+	// Bundling wins if somebody ticks both, since it is the older option and the
+	// one that keeps the samples as editable files on disk.
+	const bool withResources = m_saveOptions.saveAsProjectBundle.value();
+	const auto mode = withResources
+		? DataFile::SaveMode::Bundle
+		: m_saveOptions.saveWithEmbeddedSamples.value()
+			? DataFile::SaveMode::Embedded
+			: DataFile::SaveMode::Plain;
 
-	bool const saveResult = saveProjectFile(fileNameWithExtension, withResources);
+	bool const saveResult = saveProjectFile(fileNameWithExtension, mode);
 
 	// After saving, restore default save options.
 	m_saveOptions.setDefaultOptions();

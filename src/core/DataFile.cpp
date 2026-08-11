@@ -38,8 +38,11 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 
+#include "AudioEngine.h"
+#include "AudioResampler.h"
 #include "base64.h"
 #include "ConfigManager.h"
+#include "Engine.h"
 #include "DeprecationHelper.h"
 #include "Effect.h"
 #include "embed.h"
@@ -48,6 +51,7 @@
 #include "Note.h"
 #include "PluginFactory.h"
 #include "ProjectVersion.h"
+#include "SampleBuffer.h"
 #include "SongEditor.h"
 #include "TextFloat.h"
 #include "Track.h"
@@ -312,8 +316,10 @@ void DataFile::write( QTextStream & _strm )
 
 
 
-bool DataFile::writeFile(const QString& filename, bool withResources)
+bool DataFile::writeFile(const QString& filename, SaveMode mode)
 {
+	const bool withResources = mode == SaveMode::Bundle;
+
 	// Small lambda function for displaying errors
 	auto showError = [](QString title, QString body){
 		if (gui::getGUI() != nullptr)
@@ -385,6 +391,18 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 		{
 			showError(SongEditor::tr("Error"),
 				SongEditor::tr("Failed to copy resources."));
+			return false;
+		}
+	}
+
+	// Embedding needs no folder of its own. The audio goes into the file we are
+	// about to write, so the project stays a single file that opens anywhere.
+	if (mode == SaveMode::Embedded)
+	{
+		if (!embedResources())
+		{
+			showError(SongEditor::tr("Error"),
+				SongEditor::tr("Failed to embed samples. The project has not been saved."));
 			return false;
 		}
 	}
@@ -519,6 +537,126 @@ bool DataFile::copyResources(const QString& resourcesDir)
 			}
 		}
 		++it;
+	}
+
+	return true;
+}
+
+
+
+
+namespace {
+
+//! Convert a buffer to outputRate, returning nullptr if libsamplerate refuses the job.
+std::shared_ptr<const SampleBuffer> resampleBuffer(const SampleBuffer& buffer, sample_rate_t outputRate)
+{
+	constexpr auto channels = ch_cnt_t{2};
+	const auto ratio = static_cast<double>(outputRate) / buffer.sampleRate();
+
+	// How long the result should be if nothing is lost.
+	const auto targetFrames = static_cast<std::size_t>(std::llround(buffer.size() * ratio));
+
+	// AudioResampler always passes end_of_input = 0, so libsamplerate keeps the last
+	// few frames inside its filter delay and never flushes them. Feeding it a run of
+	// silence afterwards pushes the real tail out, and the output gets cut back to
+	// targetFrames below. Without this the end of every sample is quietly truncated,
+	// measured at 144 frames for a 48k source at SincBest.
+	constexpr auto flushFrames = std::size_t{4096};
+	auto padded = std::vector<SampleFrame>(buffer.begin(), buffer.end());
+	padded.resize(padded.size() + flushFrames);
+
+	auto output = std::vector<SampleFrame>(static_cast<std::size_t>(std::ceil(padded.size() * ratio)) + 1);
+
+	try
+	{
+		auto resampler = AudioResampler{AudioResampler::Mode::SincBest, channels};
+		resampler.setRatio(buffer.sampleRate(), outputRate);
+
+		const auto input = InterleavedBufferView<const float>{
+			reinterpret_cast<const float*>(padded.data()), channels, static_cast<f_cnt_t>(padded.size())};
+		auto view = InterleavedBufferView<float>{
+			reinterpret_cast<float*>(output.data()), channels, static_cast<f_cnt_t>(output.size())};
+
+		const auto result = resampler.process(input, view);
+		output.resize(std::min(static_cast<std::size_t>(result.outputFramesGenerated), targetFrames));
+	}
+	catch (const std::exception& e)
+	{
+		qWarning() << "ERROR: Failed to resample sample for embedding:" << e.what();
+		return nullptr;
+	}
+
+	// No audio file is passed on purpose. The buffer is the audio now, and giving it
+	// a path again would put back the external dependency this is meant to remove.
+	return std::make_shared<const SampleBuffer>(std::move(output), outputRate);
+}
+
+} // namespace
+
+
+
+
+bool DataFile::embedResources()
+{
+	const auto engineRate = Engine::audioEngine()->outputSampleRate();
+
+	for (const auto& [tagName, attributes] : ELEMENTS_WITH_RESOURCES)
+	{
+		QDomNodeList list = elementsByTagName(tagName);
+
+		for (int i = 0; !list.item(i).isNull(); ++i)
+		{
+			QDomElement el = list.item(i).toElement();
+
+			for (const auto& attribute : attributes)
+			{
+				if (!el.hasAttribute(attribute)) { continue; }
+
+				const QString reference = el.attribute(attribute);
+
+				// An empty slot is an instrument that never had a sample loaded into
+				// it. There is nothing to embed and nothing broken about it.
+				if (reference.isEmpty()) { continue; }
+
+				// factorysample: ships with LMMS and resolves on any install, so
+				// embedding it would only make the project bigger for no gain.
+				if (reference.startsWith(PathUtil::basePrefix(PathUtil::Base::FactorySample))) { continue; }
+
+				// Same fallback copyResources uses: running from the CLI with no
+				// project loaded leaves the "local:" prefix unresolved.
+				bool error = false;
+				QString path = PathUtil::toAbsolute(reference, &error);
+				if (error)
+				{
+					path = QFileInfo(m_fileName).path() + "/"
+						+ path.remove(0, PathUtil::basePrefix(PathUtil::Base::LocalDir).length());
+				}
+
+				auto buffer = SampleBuffer::fromFile(path);
+				if (!buffer || buffer->empty())
+				{
+					qWarning() << "ERROR: Failed to read sample for embedding:" << path;
+					return false;
+				}
+
+				// Embedded audio carries no sample rate of its own. fromBase64 assumes
+				// the engine rate while fromFile hands back the file's own rate, so a
+				// sample recorded at anything else plays back at the wrong speed unless
+				// it gets converted here first.
+				if (buffer->sampleRate() != engineRate)
+				{
+					buffer = resampleBuffer(*buffer, engineRate);
+					if (!buffer) { return false; }
+				}
+
+				el.setAttribute("sampledata", buffer->toBase64());
+
+				// "src" is read before "sampledata" when loading, so leaving it in place
+				// would win over the audio that was just embedded. It has to go, not be
+				// blanked.
+				el.removeAttribute(attribute);
+			}
+		}
 	}
 
 	return true;
