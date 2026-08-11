@@ -602,6 +602,17 @@ bool DataFile::embedResources()
 
 	for (const auto& [tagName, attributes] : ELEMENTS_WITH_RESOURCES)
 	{
+		// The two elements do NOT store embedded audio the same way, and writing the
+		// wrong attribute loses the audio silently: the payload lands somewhere the
+		// loader never looks while the path it needed has already been removed.
+		//
+		// audiofileprocessor reads "sampledata" and stores no rate at all, so its
+		// loader assumes the engine rate and the audio has to be converted first.
+		// sampleclip reads "data" and writes "sample_rate" beside it, so it keeps
+		// whatever rate the file was and needs no conversion.
+		const bool isClip = tagName == QLatin1String("sampleclip");
+		const QString payloadAttribute = isClip ? QStringLiteral("data") : QStringLiteral("sampledata");
+
 		QDomNodeList list = elementsByTagName(tagName);
 
 		for (int i = 0; !list.item(i).isNull(); ++i)
@@ -639,19 +650,22 @@ bool DataFile::embedResources()
 					return false;
 				}
 
-				// Embedded audio carries no sample rate of its own. fromBase64 assumes
-				// the engine rate while fromFile hands back the file's own rate, so a
-				// sample recorded at anything else plays back at the wrong speed unless
-				// it gets converted here first.
-				if (buffer->sampleRate() != engineRate)
+				// Only convert where the rate cannot travel with the audio. fromFile
+				// hands back the file's own rate, and audiofileprocessor's loader
+				// assumes the engine rate, so a mismatch there plays at the wrong
+				// speed. sampleclip records the rate next to the payload and reads it
+				// back, so converting it would be a needless generation of quality
+				// loss.
+				if (!isClip && buffer->sampleRate() != engineRate)
 				{
 					buffer = resampleBuffer(*buffer, engineRate);
 					if (!buffer) { return false; }
 				}
 
-				el.setAttribute("sampledata", buffer->toBase64());
+				el.setAttribute(payloadAttribute, buffer->toBase64());
+				if (isClip) { el.setAttribute("sample_rate", buffer->sampleRate()); }
 
-				// "src" is read before "sampledata" when loading, so leaving it in place
+				// "src" is read before the payload when loading, so leaving it in place
 				// would win over the audio that was just embedded. It has to go, not be
 				// blanked.
 				el.removeAttribute(attribute);
