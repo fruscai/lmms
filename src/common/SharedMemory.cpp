@@ -140,7 +140,7 @@ public:
 
 		if (isArray)
 		{
-			new (m_mapping) Header(size);
+			new (m_mapping) Header{size};
 		}
 	}
 
