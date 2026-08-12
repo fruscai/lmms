@@ -171,6 +171,9 @@ void printHelp()
 		"  makebundle <in> [out]                 Make a project bundle from the project\n"
 		"                                        file <in> saving the resulting bundle\n"
 		"                                        as <out>\n"
+		"  embedsamples <in> <out>               Write every sample the project uses\n"
+		"                                        into the project itself, so <out>\n"
+		"                                        plays without the audio files\n"
 		"\nGlobal options:\n"
 		"      --allowroot                Bypass root user startup check (use with\n"
 		"          caution).\n"
@@ -422,6 +425,31 @@ int main( int argc, char * * argv )
 			else
 			{
 				return usageError("No project bundle name given");
+			}
+		}
+		else if (arg == "embedsamples")
+		{
+			++i;
+
+			if (i == argc)
+			{
+				return noInputFileError();
+			}
+
+			DataFile dataFile(QString::fromLocal8Bit(argv[i]));
+
+			if (argc > i+1) // Output file name given
+			{
+				printf("Embedding samples\n");
+				if (!dataFile.writeFile(QString::fromLocal8Bit(argv[i+1]), DataFile::SaveMode::Embedded))
+				{
+					return EXIT_FAILURE;
+				}
+				return EXIT_SUCCESS;
+			}
+			else
+			{
+				return usageError("No output file name given");
 			}
 		}
 		else if( arg == "--allowroot" )

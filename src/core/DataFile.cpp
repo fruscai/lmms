@@ -399,10 +399,12 @@ bool DataFile::writeFile(const QString& filename, SaveMode mode)
 	// about to write, so the project stays a single file that opens anywhere.
 	if (mode == SaveMode::Embedded)
 	{
-		if (!embedResources())
+		QString failedReference;
+		if (!embedResources(&failedReference))
 		{
 			showError(SongEditor::tr("Error"),
-				SongEditor::tr("Failed to embed samples. The project has not been saved."));
+				SongEditor::tr("Could not read this sample, so the project has not been saved:\n\n%1")
+					.arg(failedReference.isEmpty() ? SongEditor::tr("unknown sample") : failedReference));
 			return false;
 		}
 	}
@@ -649,9 +651,19 @@ const std::map<QString, std::vector<EmbedTarget>> EMBEDDABLE_ELEMENTS = {
 
 
 
-bool DataFile::embedResources()
+bool DataFile::embedResources(QString* failedReference)
 {
-	const auto engineRate = Engine::audioEngine()->outputSampleRate();
+	// The audio engine only exists when there is a running session. CLI commands
+	// never start one, so fall back to the configured rate rather than
+	// dereferencing a null engine, which is a straight segfault.
+	//
+	// Worth being honest about what this rate means: sampledata stores no rate of
+	// its own, so the loader assumes whatever engine opens the file later. All this
+	// can do is target the rate configured here and be right for the common case.
+	const auto engineRate = Engine::audioEngine()
+		? Engine::audioEngine()->outputSampleRate()
+		: static_cast<sample_rate_t>(
+			std::max(ConfigManager::inst()->value("audioengine", "samplerate").toInt(), 44100));
 
 	for (const auto& [tagName, targets] : EMBEDDABLE_ELEMENTS)
 	{
@@ -689,7 +701,11 @@ bool DataFile::embedResources()
 				auto buffer = SampleBuffer::fromFile(path);
 				if (!buffer || buffer->empty())
 				{
+					// Naming it matters. Without this the only clue is "failed to embed",
+					// and a project can reference a sample the user never knowingly added,
+					// such as the samples/empty.wav that ships in some stock demos.
 					qWarning() << "ERROR: Failed to read sample for embedding:" << path;
+					if (failedReference) { *failedReference = reference; }
 					return false;
 				}
 
