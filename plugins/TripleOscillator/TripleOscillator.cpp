@@ -253,6 +253,10 @@ void TripleOscillator::saveSettings( QDomDocument & _doc, QDomElement & _this )
 					"useWaveTable" + QString::number (i+1 ) );
 		_this.setAttribute( "userwavefile" + is,
 					m_osc[i]->m_sampleBuffer->audioFile() );
+		if (m_osc[i]->m_sampleBuffer->audioFile().isEmpty() && !m_osc[i]->m_sampleBuffer->empty())
+		{
+			_this.setAttribute("userwavedata" + is, m_osc[i]->m_sampleBuffer->toBase64());
+		}
 	}
 }
 
@@ -288,6 +292,11 @@ void TripleOscillator::loadSettings( const QDomElement & _this )
 				m_osc[i]->m_userAntiAliasWaveTable = Oscillator::generateAntiAliasUserWaveTable(m_osc[i]->m_sampleBuffer.get());
 			}
 			else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }
+		}
+		else if (auto userWaveData = _this.attribute("userwavedata" + is); !userWaveData.isEmpty())
+		{
+			m_osc[i]->m_sampleBuffer = SampleBuffer::fromBase64(userWaveData);
+			m_osc[i]->m_userAntiAliasWaveTable = Oscillator::generateAntiAliasUserWaveTable(m_osc[i]->m_sampleBuffer.get());
 		}
 	}
 }

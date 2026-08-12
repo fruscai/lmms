@@ -353,6 +353,14 @@ void EnvelopeAndLfoParameters::saveSettings( QDomDocument & _doc,
 	m_x100Model.saveSettings( _doc, _parent, "x100" );
 	m_controlEnvAmountModel.saveSettings( _doc, _parent, "ctlenvamt" );
 	_parent.setAttribute("userwavefile", m_userWave->audioFile());
+	// Only written when the wave came from base64 rather than a file, so the
+	// common case (no user wave at all) does not gain an attribute. Every
+	// instrument has three of these nodes, so an unconditional payload would
+	// bloat every project in LMMS.
+	if (m_userWave->audioFile().isEmpty() && !m_userWave->empty())
+	{
+		_parent.setAttribute("userwavedata", m_userWave->toBase64());
+	}
 }
 
 
@@ -390,7 +398,11 @@ void EnvelopeAndLfoParameters::loadSettings( const QDomElement & _this )
 		{
 			m_userWave = SampleBuffer::fromFile(_this.attribute("userwavefile"));
 		}
-		else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }  
+		else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }
+	}
+	else if (const auto userWaveData = _this.attribute("userwavedata"); !userWaveData.isEmpty())
+	{
+		m_userWave = SampleBuffer::fromBase64(userWaveData);
 	}
 
 	updateSampleVars();

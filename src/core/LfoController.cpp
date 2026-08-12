@@ -224,6 +224,10 @@ void LfoController::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	m_waveModel.saveSettings( _doc, _this, "wave" );
 	m_multiplierModel.saveSettings( _doc, _this, "multiplier" );
 	_this.setAttribute("userwavefile", m_userDefSampleBuffer->audioFile());
+	if (m_userDefSampleBuffer->audioFile().isEmpty() && !m_userDefSampleBuffer->empty())
+	{
+		_this.setAttribute("userwavedata", m_userDefSampleBuffer->toBase64());
+	}
 }
 
 
@@ -246,6 +250,10 @@ void LfoController::loadSettings( const QDomElement & _this )
 			m_userDefSampleBuffer = SampleBuffer::fromFile(_this.attribute("userwavefile"));
 		}
 		else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }
+	}
+	else if (const auto userWaveData = _this.attribute("userwavedata"); !userWaveData.isEmpty())
+	{
+		m_userDefSampleBuffer = SampleBuffer::fromBase64(userWaveData);
 	}
 
 	updateSampleFunction();

@@ -596,31 +596,74 @@ std::shared_ptr<const SampleBuffer> resampleBuffer(const SampleBuffer& buffer, s
 
 
 
+namespace {
+
+//! One embeddable audio reference: where the path lives, and where the audio goes.
+struct EmbedTarget
+{
+	const char* pathAttribute;
+	const char* payloadAttribute;
+	//! The loader assumes the engine rate, so the audio must be converted to match.
+	bool convertRate;
+	//! The element keeps a "sample_rate" of its own, so the original rate survives.
+	bool storesRate;
+};
+
+/*
+ * Every element in LMMS that names an audio file the song depends on.
+ *
+ * Kept separate from ELEMENTS_WITH_RESOURCES on purpose. That map drives
+ * bundling, and it lists only sampleclip and audiofileprocessor, which is why
+ * makebundle silently leaves user waves pointing at files that may not exist.
+ * Widening it would change what bundling does, which is a different job.
+ *
+ * The payload attribute differs per element and getting it wrong loses the
+ * audio without a word: the base64 lands where the loader never looks, and the
+ * path it needed has already been removed.
+ *
+ * Soundfonts (sf2player), gig banks (gigplayer) and patches (patman) are left
+ * out deliberately. Those are instrument libraries installed on a machine
+ * rather than audio belonging to the song, so embedding them would be like
+ * shipping a copy of every stock plugin with the project. VST paths are not
+ * audio at all.
+ */
+const std::map<QString, std::vector<EmbedTarget>> EMBEDDABLE_ELEMENTS = {
+	{"audiofileprocessor", {{"src", "sampledata", true, false}}},
+	{"slicert", {{"src", "sampledata", true, false}}},
+	// Carries its own sample_rate, so the original rate travels with the audio.
+	{"sampleclip", {{"src", "data", false, true}}},
+	// User waves are wavetables read by phase, not played back at a rate, so
+	// resampling them would only rewrite the table at a different resolution.
+	{"tripleoscillator",
+		{{"userwavefile0", "userwavedata0", false, false}, {"userwavefile1", "userwavedata1", false, false},
+			{"userwavefile2", "userwavedata2", false, false}}},
+	// The envelope and LFO nodes every instrument carries, three apiece.
+	{"elvol", {{"userwavefile", "userwavedata", false, false}}},
+	{"elcut", {{"userwavefile", "userwavedata", false, false}}},
+	{"elres", {{"userwavefile", "userwavedata", false, false}}},
+	{"lfocontroller", {{"userwavefile", "userwavedata", false, false}}},
+};
+
+} // namespace
+
+
+
+
 bool DataFile::embedResources()
 {
 	const auto engineRate = Engine::audioEngine()->outputSampleRate();
 
-	for (const auto& [tagName, attributes] : ELEMENTS_WITH_RESOURCES)
+	for (const auto& [tagName, targets] : EMBEDDABLE_ELEMENTS)
 	{
-		// The two elements do NOT store embedded audio the same way, and writing the
-		// wrong attribute loses the audio silently: the payload lands somewhere the
-		// loader never looks while the path it needed has already been removed.
-		//
-		// audiofileprocessor reads "sampledata" and stores no rate at all, so its
-		// loader assumes the engine rate and the audio has to be converted first.
-		// sampleclip reads "data" and writes "sample_rate" beside it, so it keeps
-		// whatever rate the file was and needs no conversion.
-		const bool isClip = tagName == QLatin1String("sampleclip");
-		const QString payloadAttribute = isClip ? QStringLiteral("data") : QStringLiteral("sampledata");
-
 		QDomNodeList list = elementsByTagName(tagName);
 
 		for (int i = 0; !list.item(i).isNull(); ++i)
 		{
 			QDomElement el = list.item(i).toElement();
 
-			for (const auto& attribute : attributes)
+			for (const auto& target : targets)
 			{
+				const auto attribute = QString::fromLatin1(target.pathAttribute);
 				if (!el.hasAttribute(attribute)) { continue; }
 
 				const QString reference = el.attribute(attribute);
@@ -653,17 +696,15 @@ bool DataFile::embedResources()
 				// Only convert where the rate cannot travel with the audio. fromFile
 				// hands back the file's own rate, and audiofileprocessor's loader
 				// assumes the engine rate, so a mismatch there plays at the wrong
-				// speed. sampleclip records the rate next to the payload and reads it
-				// back, so converting it would be a needless generation of quality
-				// loss.
-				if (!isClip && buffer->sampleRate() != engineRate)
+				// speed.
+				if (target.convertRate && buffer->sampleRate() != engineRate)
 				{
 					buffer = resampleBuffer(*buffer, engineRate);
 					if (!buffer) { return false; }
 				}
 
-				el.setAttribute(payloadAttribute, buffer->toBase64());
-				if (isClip) { el.setAttribute("sample_rate", buffer->sampleRate()); }
+				el.setAttribute(QString::fromLatin1(target.payloadAttribute), buffer->toBase64());
+				if (target.storesRate) { el.setAttribute("sample_rate", buffer->sampleRate()); }
 
 				// "src" is read before the payload when loading, so leaving it in place
 				// would win over the audio that was just embedded. It has to go, not be
