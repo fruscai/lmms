@@ -698,6 +698,19 @@ bool DataFile::embedResources(QString* failedReference)
 						+ path.remove(0, PathUtil::basePrefix(PathUtil::Base::LocalDir).length());
 				}
 
+				// Check before handing it to SampleBuffer. On failure fromFile returns
+				// emptyBuffer(), which default constructs a SampleBuffer, whose default
+				// member initialiser reads Engine::audioEngine()->outputSampleRate() and
+				// segfaults when there is no engine. That is an upstream trap and it only
+				// ever fires on the failure path, which is exactly where it is least
+				// welcome. Checking first keeps us out of it and gives a better message.
+				if (!QFileInfo(path).exists())
+				{
+					qWarning() << "ERROR: Sample not found for embedding:" << reference;
+					if (failedReference) { *failedReference = reference; }
+					return false;
+				}
+
 				auto buffer = SampleBuffer::fromFile(path);
 				if (!buffer || buffer->empty())
 				{
