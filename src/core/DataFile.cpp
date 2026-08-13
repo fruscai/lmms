@@ -399,13 +399,17 @@ bool DataFile::writeFile(const QString& filename, SaveMode mode)
 	// about to write, so the project stays a single file that opens anywhere.
 	if (mode == SaveMode::Embedded)
 	{
-		QString failedReference;
-		if (!embedResources(&failedReference))
+		QStringList skipped;
+		embedResources(&skipped);
+
+		// The project is still written. Anything that could not be read keeps its
+		// original path, so it opens and reports the missing file as usual, and
+		// every other sample in the project is still embedded.
+		if (!skipped.isEmpty())
 		{
-			showError(SongEditor::tr("Error"),
-				SongEditor::tr("Could not read this sample, so the project has not been saved:\n\n%1")
-					.arg(failedReference.isEmpty() ? SongEditor::tr("unknown sample") : failedReference));
-			return false;
+			showError(SongEditor::tr("Some samples were not embedded"),
+				SongEditor::tr("The project was saved, but these samples could not be read and still "
+					"need their files:\n\n%1").arg(skipped.join("\n")));
 		}
 	}
 
@@ -651,7 +655,7 @@ const std::map<QString, std::vector<EmbedTarget>> EMBEDDABLE_ELEMENTS = {
 
 
 
-bool DataFile::embedResources(QString* failedReference)
+bool DataFile::embedResources(QStringList* skipped)
 {
 	// The audio engine only exists when there is a running session. CLI commands
 	// never start one, so fall back to the configured rate rather than
@@ -704,22 +708,24 @@ bool DataFile::embedResources(QString* failedReference)
 				// segfaults when there is no engine. That is an upstream trap and it only
 				// ever fires on the failure path, which is exactly where it is least
 				// welcome. Checking first keeps us out of it and gives a better message.
+				// A sample that cannot be read is left exactly as it is, still pointing at
+				// its original path. Removing it would hand back a silently empty slot;
+				// leaving it means the project still opens and LMMS reports the missing
+				// file the way it always does. One bad reference should not cost the user
+				// every other sample in the project.
 				if (!QFileInfo(path).exists())
 				{
-					qWarning() << "ERROR: Sample not found for embedding:" << reference;
-					if (failedReference) { *failedReference = reference; }
-					return false;
+					qWarning() << "Sample not found, left unembedded:" << reference;
+					if (skipped) { skipped->append(reference); }
+					continue;
 				}
 
 				auto buffer = SampleBuffer::fromFile(path);
 				if (!buffer || buffer->empty())
 				{
-					// Naming it matters. Without this the only clue is "failed to embed",
-					// and a project can reference a sample the user never knowingly added,
-					// such as the samples/empty.wav that ships in some stock demos.
-					qWarning() << "ERROR: Failed to read sample for embedding:" << path;
-					if (failedReference) { *failedReference = reference; }
-					return false;
+					qWarning() << "Sample unreadable, left unembedded:" << reference;
+					if (skipped) { skipped->append(reference); }
+					continue;
 				}
 
 				// Only convert where the rate cannot travel with the audio. fromFile
@@ -728,8 +734,14 @@ bool DataFile::embedResources(QString* failedReference)
 				// speed.
 				if (target.convertRate && buffer->sampleRate() != engineRate)
 				{
-					buffer = resampleBuffer(*buffer, engineRate);
-					if (!buffer) { return false; }
+					auto converted = resampleBuffer(*buffer, engineRate);
+					if (!converted)
+					{
+						qWarning() << "Sample could not be converted, left unembedded:" << reference;
+						if (skipped) { skipped->append(reference); }
+						continue;
+					}
+					buffer = converted;
 				}
 
 				el.setAttribute(QString::fromLatin1(target.payloadAttribute), buffer->toBase64());
