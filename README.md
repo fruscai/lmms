@@ -27,28 +27,42 @@
 
 > ### This fork: Save with embedded samples
 >
-> This branch adds an option that writes every sample a project uses into the project file itself,
-> so it opens and plays on a machine that does not have the audio files. It appears as a checkbox in
-> the Save As dialog, next to the existing project bundle option, and as a command:
+> Writes every sample a project uses into the project file itself, so it opens and plays on a
+> machine that does not have the audio files. A checkbox in the Save As dialog next to the existing
+> project bundle option, and a command:
 >
 > ```
 > lmms embedsamples <in> <out>
 > ```
 >
-> It covers `audiofileprocessor`, `sampleclip` and `slicert`, plus the TripleOscillator, envelope
-> and LFO user waves that had no way to be embedded at all before.
+> **Two branches, both buildable.**
 >
-> **Sample rate.** Embedded audio carries no rate of its own, and the loader assumes the engine
-> rate. A 48 kHz sample stored raw plays flat by 48000/44100, measured at 202 Hz against a correct
-> 220 Hz, so the audio is converted before it goes in. That target is the engine rate of the machine
-> doing the saving, and nothing in the file can correct it later, so a project embedded on a 48 kHz
-> engine plays fast on a 44.1 kHz one. The command line has no engine at all and uses the configured
-> rate, minimum 44100.
+> | Branch | Covers | Attributes written |
+> |---|---|---|
+> | `audioembed-v1` | AudioFileProcessor instruments and Sample tracks | `sampledata`, `data`, `sample_rate`, all of which stock LMMS already reads |
+> | `audioembed-v2` | the above plus SlicerT, TripleOscillator user waves, and the envelope and LFO user waves | adds `userwavedata`, which stock LMMS ignores |
 >
-> For a file going to somebody else,
-> [LMMS-Tools-Relinker-Embedder](https://github.com/fruscai/LMMS-Tools-Relinker-Embedder) does the
-> same job from outside LMMS and fixes its target at 44100, which is LMMS's default. That repo also
-> covers LMMS 1.2, which this branch does not: anything saved here is a 1.3 project.
+> ```
+> git clone https://github.com/fruscai/lmms.git
+> cd lmms
+> git checkout audioembed-v1     # or audioembed-v2
+> ```
+>
+> v2 output still opens and plays in stock LMMS 1.3. Measured against stock at the same upstream
+> commit with every source file deleted: 4066144 frames at peak 32767, matching. The custom
+> oscillator and LFO wave shapes are the only part stock skips.
+>
+> **Sample rate.** Embedded audio carries no rate of its own and the loader assumes the engine rate.
+> A 48 kHz sample stored raw plays flat by 48000/44100, measured at 202 Hz against a correct 220 Hz,
+> so the audio is converted first. The target is the engine rate of the machine doing the saving,
+> and nothing in the file corrects it afterwards, so a project embedded on a 48 kHz engine plays
+> fast on a 44.1 kHz one. The command line uses the configured rate, minimum 44100.
+>
+> **LMMS 1.2 cannot open anything either branch saves.** LMMS 1.3 writes `midiclip`, `mixer` and
+> `mixerchannel` on every save and 1.2 has no such elements. That is unrelated to embedding. For 1.2,
+> and for anything going to somebody else, use
+> [LMMS-Tools-Relinker-Embedder](https://github.com/fruscai/LMMS-Tools-Relinker-Embedder), which does
+> the same job from outside LMMS and fixes its target rate at 44100.
 >
 > Notes, decision records and the patches on their own are in
 > [lmms-embed-samples](https://github.com/fruscai/lmms-embed-samples).
