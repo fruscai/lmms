@@ -1,0 +1,45 @@
+---
+name: release
+'on':
+  push:
+    tags:
+      - 'audioembed-*'
+permissions:
+  contents: write
+jobs:
+  publish:
+    name: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the build workflow
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          running-workflow-name: publish
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+
+      - name: Collect the installers
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          commit: ${{ github.sha }}
+          workflow: build.yml
+          path: installers
+          if_no_artifact_found: warn
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installers/**/*
+          generate_release_notes: true
+          body: |
+            Unsigned builds. Each platform warns about that:
+
+            - macOS: right-click the app, choose Open, then Open again. Double-clicking
+              will not work the first time.
+            - Windows: SmartScreen shows "Windows protected your PC". Click More info,
+              then Run anyway.
+            - Linux: `chmod +x` the AppImage before running it.
+
+            Installs alongside a normal LMMS rather than replacing it. Both use the same
+            `~/Documents/lmms` folder and the same settings.
