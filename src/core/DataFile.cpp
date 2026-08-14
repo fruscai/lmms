@@ -565,8 +565,8 @@ std::shared_ptr<const SampleBuffer> resampleBuffer(const SampleBuffer& buffer, s
 	// AudioResampler always passes end_of_input = 0, so libsamplerate keeps the last
 	// few frames inside its filter delay and never flushes them. Feeding it a run of
 	// silence afterwards pushes the real tail out, and the output gets cut back to
-	// targetFrames below. Without this the end of every sample is quietly truncated,
-	// measured at 144 frames for a 48k source at SincBest.
+	// targetFrames below. Without this the end of every sample is truncated with no
+	// error, measured at 144 frames for a 48k source at SincBest.
 	constexpr auto flushFrames = std::size_t{4096};
 	auto padded = std::vector<SampleFrame>(buffer.begin(), buffer.end());
 	padded.resize(padded.size() + flushFrames);
@@ -620,7 +620,7 @@ struct EmbedTarget
  *
  * Kept separate from ELEMENTS_WITH_RESOURCES on purpose. That map drives
  * bundling, and it lists only sampleclip and audiofileprocessor, which is why
- * makebundle silently leaves user waves pointing at files that may not exist.
+ * makebundle leaves user waves pointing at files that may not exist, with no error.
  * Widening it would change what bundling does, which is a different job.
  *
  * The payload attribute differs per element and getting it wrong loses the
@@ -659,7 +659,7 @@ bool DataFile::embedResources(QStringList* skipped)
 {
 	// The audio engine only exists when there is a running session. CLI commands
 	// never start one, so fall back to the configured rate rather than
-	// dereferencing a null engine, which is a straight segfault.
+	// dereferencing a null engine and crashing.
 	//
 	// Worth being honest about what this rate means: sampledata stores no rate of
 	// its own, so the loader assumes whatever engine opens the file later. All this
@@ -709,10 +709,9 @@ bool DataFile::embedResources(QStringList* skipped)
 				// ever fires on the failure path, which is exactly where it is least
 				// welcome. Checking first keeps us out of it and gives a better message.
 				// A sample that cannot be read is left exactly as it is, still pointing at
-				// its original path. Removing it would hand back a silently empty slot;
-				// leaving it means the project still opens and LMMS reports the missing
-				// file the way it always does. One bad reference should not cost the user
-				// every other sample in the project.
+				// its original path. Removing it would leave an empty slot with no error.
+				// Leaving it means the project still opens and LMMS reports the missing
+				// file as usual, and the other samples are still embedded.
 				if (!QFileInfo(path).exists())
 				{
 					qWarning() << "Sample not found, left unembedded:" << reference;

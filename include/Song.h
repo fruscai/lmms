@@ -100,12 +100,10 @@ public:
 			saveAsProjectBundle.setValue(false);
 			// saveWithEmbeddedSamples is deliberately NOT reset here.
 			//
-			// Bundling can afford to reset, because writing a bundle a second
-			// time by accident is loud: it refuses to overwrite the folder. If
-			// embedding reset, saving again after an embed would quietly write
-			// the project back out with file paths in it and no warning, which
-			// hands back exactly the dependency the option exists to remove.
-			// Losing the audio silently is far worse than embedding twice.
+			// Bundling can reset: writing a bundle twice by accident stops with
+			// an error rather than overwriting the folder. If embedding reset,
+			// the next save would write the project back out with file paths in
+			// it and no warning, restoring the dependency the option removes.
 		}
 	};
 
