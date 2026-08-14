@@ -11,13 +11,9 @@ jobs:
     name: publish
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for the build workflow
-        uses: lewagon/wait-on-check-action@v1.3.4
-        with:
-          ref: ${{ github.sha }}
-          running-workflow-name: publish
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 30
+      # No wait step. doxygen fails on this tree from documentation warnings in the
+      # bundled Carla sources, so waiting on every check never proceeds. Tag a commit
+      # whose build workflow has already gone green.
 
       - name: Collect the installers
         uses: dawidd6/action-download-artifact@v6
