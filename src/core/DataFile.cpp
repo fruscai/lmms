@@ -408,7 +408,9 @@ bool DataFile::writeFile(const QString& filename, SaveMode mode)
 		{
 			showError(SongEditor::tr("Some samples were not embedded"),
 				SongEditor::tr("The project was saved, but these samples could not be read and still "
-					"need their files:\n\n%1").arg(skipped.join("\n")));
+					"need their files:\n\n%1\n\nThis build covers AudioFileProcessor instruments and "
+					"Sample tracks. SlicerT and user waves on oscillators, envelopes and LFOs are "
+					"covered by the full build.").arg(skipped.join("\n")));
 		}
 	}
 
@@ -691,6 +693,35 @@ bool DataFile::embedResources(QStringList* skipped)
 				// would win over the audio that was just embedded. It has to go, not be
 				// blanked.
 				el.removeAttribute(attribute);
+			}
+		}
+	}
+
+	// This build embeds audiofileprocessor and sampleclip only. Anything else that
+	// names an audio file is left as it is, and nothing in the save dialog says so,
+	// so report those too rather than let a project ship still needing files.
+	static const std::map<QString, std::vector<QString>> NOT_COVERED = {
+		{"slicert", {"src"}},
+		{"tripleoscillator", {"userwavefile0", "userwavefile1", "userwavefile2"}},
+		{"elvol", {"userwavefile"}},
+		{"elcut", {"userwavefile"}},
+		{"elres", {"userwavefile"}},
+		{"lfocontroller", {"userwavefile"}},
+	};
+
+	for (const auto& [tagName, attributes] : NOT_COVERED)
+	{
+		QDomNodeList list = elementsByTagName(tagName);
+		for (int i = 0; !list.item(i).isNull(); ++i)
+		{
+			QDomElement el = list.item(i).toElement();
+			for (const auto& attribute : attributes)
+			{
+				const QString reference = el.attribute(attribute);
+				if (reference.isEmpty()) { continue; }
+				if (reference.startsWith(PathUtil::basePrefix(PathUtil::Base::FactorySample))) { continue; }
+				qWarning() << "Not embedded by this build:" << reference;
+				if (skipped) { skipped->append(reference); }
 			}
 		}
 	}
