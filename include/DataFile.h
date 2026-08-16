@@ -84,7 +84,10 @@ public:
 	void write( QTextStream& strm );
 	bool writeFile(const QString& fn, SaveMode mode = SaveMode::Plain);
 	bool copyResources(const QString& resourcesDir); //!< Copies resources to the resourcesDir and changes the DataFile to use local paths to them
-	bool embedResources(); //!< Reads each referenced sample and stores its audio in the DataFile itself, so the project needs no external files
+	//! Reads each referenced sample and stores its audio in the DataFile itself, so the project
+	//! needs no external files. Samples that cannot be read are left pointing at their original
+	//! path and appended to skipped, so the project still opens and reports what is missing.
+	bool embedResources(QStringList* skipped = nullptr);
 	bool hasLocalPlugins(QDomElement parent = QDomElement(), bool firstCall = true) const;
 
 	QDomElement& content()

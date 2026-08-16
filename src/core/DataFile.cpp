@@ -399,11 +399,16 @@ bool DataFile::writeFile(const QString& filename, SaveMode mode)
 	// about to write, so the project stays a single file that opens anywhere.
 	if (mode == SaveMode::Embedded)
 	{
-		if (!embedResources())
+		QStringList skipped;
+		embedResources(&skipped);
+
+		// The project is still written. Anything that could not be read keeps its
+		// original path, so it opens and reports the missing file as usual.
+		if (!skipped.isEmpty())
 		{
-			showError(SongEditor::tr("Error"),
-				SongEditor::tr("Failed to embed samples. The project has not been saved."));
-			return false;
+			showError(SongEditor::tr("Some samples were not embedded"),
+				SongEditor::tr("The project was saved, but these samples could not be read and still "
+					"need their files:\n\n%1").arg(skipped.join("\n")));
 		}
 	}
 
@@ -596,7 +601,7 @@ std::shared_ptr<const SampleBuffer> resampleBuffer(const SampleBuffer& buffer, s
 
 
 
-bool DataFile::embedResources()
+bool DataFile::embedResources(QStringList* skipped)
 {
 	const auto engineRate = Engine::audioEngine()->outputSampleRate();
 
@@ -643,11 +648,22 @@ bool DataFile::embedResources()
 						+ path.remove(0, PathUtil::basePrefix(PathUtil::Base::LocalDir).length());
 				}
 
+				// Check before handing it to SampleBuffer. On failure fromFile returns
+				// emptyBuffer(), which default constructs a SampleBuffer, whose default
+				// member initialiser reads Engine::audioEngine()->outputSampleRate().
+				if (!QFileInfo(path).exists())
+				{
+					qWarning() << "Sample not found, left unembedded:" << reference;
+					if (skipped) { skipped->append(reference); }
+					continue;
+				}
+
 				auto buffer = SampleBuffer::fromFile(path);
 				if (!buffer || buffer->empty())
 				{
-					qWarning() << "ERROR: Failed to read sample for embedding:" << path;
-					return false;
+					qWarning() << "Sample unreadable, left unembedded:" << reference;
+					if (skipped) { skipped->append(reference); }
+					continue;
 				}
 
 				// Only convert where the rate cannot travel with the audio. fromFile
@@ -658,8 +674,14 @@ bool DataFile::embedResources()
 				// loss.
 				if (!isClip && buffer->sampleRate() != engineRate)
 				{
-					buffer = resampleBuffer(*buffer, engineRate);
-					if (!buffer) { return false; }
+					auto converted = resampleBuffer(*buffer, engineRate);
+					if (!converted)
+					{
+						qWarning() << "Sample could not be converted, left unembedded:" << reference;
+						if (skipped) { skipped->append(reference); }
+						continue;
+					}
+					buffer = converted;
 				}
 
 				el.setAttribute(payloadAttribute, buffer->toBase64());
